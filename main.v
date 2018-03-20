@@ -1,9 +1,10 @@
-module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6);
+module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6, HEX7, LEDG);
     input [17:0] SW;
     input [3:0] KEY;
     input CLOCK_50;
     output [17:0] LEDR;
-    output [6:0] HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6;
+    output [6:0] HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6, HEX7;
+	output [7:0] LEDG;
 
     wire resetn;
 	wire next;
@@ -19,15 +20,26 @@ module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX
 	wire [3:0] d1;
 	wire [3:0] d0;
 
+	wire [3:0] timer_tens;
+	wire [3:0] timer_ones;
+
     part2 u0(
 	.clk(CLOCK_50),
 	.resetn(resetn),
 	.next(next),
 	.go(go),
+	.check(~KEY[2]),
 	.switches(SW[17:0]),
 
-	.temp(LEDR[13:0]),
-	.temp2(LEDR[17]),
+	.ledr(LEDR),
+	.ledg(LEDG),
+
+	.temp(),
+	.temp2(),
+	.hint(SW[17]),
+
+	.timer_tens(timer_tens),
+	.timer_ones(timer_ones),
 
 	.d3(d3),
 	.d2(d2),
@@ -55,6 +67,16 @@ module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX
 	.segments(HEX3)
 	);
 
+	hex_decoder H4(
+	.hex_digit(timer_ones), 
+	.segments(HEX4)
+	);
+
+	hex_decoder H5(
+	.hex_digit(timer_tens), 
+	.segments(HEX5)
+	);
+
 endmodule
 
 module part2(
@@ -62,10 +84,18 @@ module part2(
 	input resetn,
 	input next,
 	input go,
+	input check,
 	input [17:0] switches,
+
+	output [17:0] ledr,
+	output [7:0] ledg,
+	input hint,
 
 	output [13:0] temp,
 	output temp2,
+
+	output [4:0] timer_tens,
+	output [4:0] timer_ones,
 
 	output [3:0] d3,
 	output [3:0] d2,
@@ -80,18 +110,30 @@ module part2(
     wire ld_dig0;
 	wire do_mult;
 	wire chk_seq;
+	wire chk_seq2;
+
+	wire endtime;
+	wire won;
+	wire over;
+	wire overwait;
 
     control C0(
 	.clk(clk),
 	.resetn(resetn),
 	.next(next),
 	.go(go),
+	.check(check),
+	.endtime(endtime),
+	.won(won),
+	.over(over),
+	.overwait(overwait),
 	.ld_dig3(ld_dig3),
 	.ld_dig2(ld_dig2),
 	.ld_dig1(ld_dig1),
 	.ld_dig0(ld_dig0),
 	.do_mult(do_mult),
-	.chk_seq(chk_seq)
+	.chk_seq(chk_seq),
+	.chk_seq2(chk_seq2)
     );
 
     datapath D0(
@@ -104,8 +146,18 @@ module part2(
 	.ld_dig0(ld_dig0),
 	.do_mult(do_mult),
 	.chk_seq(chk_seq),
+	.chk_seq2(chk_seq2),
+	.over(over),
+	.overwait(overwait),
 	.temp(temp),
 	.temp2(temp2),
+	.ledr(ledr),
+	.ledg(ledg),
+	.hint(hint),
+	.timer_tens(timer_tens),
+	.timer_ones(timer_ones),
+	.endtime(endtime),
+	.won(won),
 	.d3(d3),
 	.d2(d2),
 	.d1(d1),
@@ -119,13 +171,21 @@ module control(
     input resetn,
 	input next,
 	input go,
+	input check,
+
+	input endtime,
+	input won,
 
     output reg  ld_dig3,
     output reg  ld_dig2,
     output reg  ld_dig1,
     output reg  ld_dig0,
 	output reg do_mult,
-	output reg chk_seq
+	output reg chk_seq,
+	output reg chk_seq2,
+
+	output reg over,
+	output reg overwait
     );
 
     reg [5:0] current_state, next_state; 
@@ -137,8 +197,14 @@ module control(
                 S_LOAD_DIGIT0   = 5'd4,
 		S_LOAD_DIGIT_WAIT   = 5'd5,
 		S_WAIT_BIN_WAIT        = 5'd6,
-		S_WAIT_BIN        = 5'd7;
+		S_WAIT_BIN        = 5'd7,
+		S_WAIT_BIN_CHECK = 5'd8,
+		S_WAIT_BIN_CHECK_WAIT = 5'd9,
+		S_GAMEOVER = 5'd10,
+		S_GAMEOVER_WAIT = 5'd11;
     
+	wire gameover;
+	assign gameover = (endtime || won);
     // Next state logic aka our state table
     always@(*)
     begin: state_table 
@@ -149,12 +215,23 @@ module control(
                 S_LOAD_DIGIT1: next_state = S_LOAD_DIGIT0;
                 S_LOAD_DIGIT0: next_state = S_LOAD_DIGIT_WAIT;
                 S_LOAD_DIGIT_WAIT: next_state = next ? S_LOAD_DIGIT_WAIT : S_WAIT_DEC;
+
                 S_WAIT_BIN_WAIT: next_state = go ? S_WAIT_BIN_WAIT : S_WAIT_BIN;
-		S_WAIT_BIN: next_state = S_WAIT_BIN;
+		//S_WAIT_BIN: next_state = check ? S_WAIT_BIN_CHECK : S_WAIT_BIN;
+		S_WAIT_BIN: next_state = gameover ? S_GAMEOVER : (check ? S_WAIT_BIN_CHECK : S_WAIT_BIN);
+		S_WAIT_BIN_CHECK: next_state = gameover ? S_GAMEOVER : S_WAIT_BIN_CHECK_WAIT;
+		//S_WAIT_BIN_CHECK_WAIT: next_state = check ? S_WAIT_BIN_CHECK_WAIT : S_WAIT_BIN;
+		S_WAIT_BIN_CHECK_WAIT: next_state = gameover ? S_GAMEOVER : (check ? S_WAIT_BIN_CHECK_WAIT : S_WAIT_BIN);
+
+		S_GAMEOVER: next_state = S_GAMEOVER_WAIT;
+		S_GAMEOVER_WAIT: next_state = S_GAMEOVER_WAIT;
             default:     next_state = S_WAIT_DEC;
         endcase
     end // state_table
-   
+
+	//reg result;
+	//assign ledg = ((result == 1'b1) && (current_state == S_GAMEOVER_WAIT)) ? 8'b11111111 : 8'b00000000;
+	//assign ledr = ((result == 1'b0) && (current_state == S_GAMEOVER_WAIT)) ? 18'b11_11111111_11111111 : 18'b00_00000000_00000000;
 
     // Output logic aka all of our datapath control signals
     always @(*)
@@ -166,6 +243,9 @@ module control(
         ld_dig0 = 1'b0;
 	do_mult = 1'b0;
 	chk_seq = 1'b0;
+	chk_seq2 = 1'b0;
+	over = 1'b0;
+	overwait = 1'b0;
 
         case (current_state)
             S_LOAD_DIGIT3: begin
@@ -180,12 +260,40 @@ module control(
             S_LOAD_DIGIT0: begin
                 ld_dig0 = 1'b1;
                 end
+
             S_WAIT_BIN_WAIT: begin
                 do_mult = 1'b1;
                 end
             S_WAIT_BIN: begin
                 chk_seq = 1'b1;
                 end
+            S_WAIT_BIN_CHECK: begin
+                chk_seq2 = 1'b1;
+		chk_seq = 1'b1;
+                end
+            S_WAIT_BIN_CHECK_WAIT: begin
+                chk_seq = 1'b1;
+                end
+
+            S_GAMEOVER: begin
+                over = 1'b1;
+                end
+            S_GAMEOVER_WAIT: begin
+                overwait = 1'b1;
+                end
+
+            /*S_GAMEOVER: begin
+                if (won == 1'b1)
+			result = 1'b1;
+		else if (endtime == 1'b1)
+			result = 1'b0;
+                end*/
+            /*S_GAMtemp2EOVER_WAIT: begin
+                if (result == 1'b1)
+			assign ledg = 8'b11111111;
+		else if (result == 1'b0)
+			assign ledr = 17'b1_11111111_11111111;
+                end*/
         endcase
     end
    
@@ -197,7 +305,8 @@ module control(
         else
             current_state <= next_state;
     end // state_FFS
-endmodule
+endmodule	//assign ledg = ((result == 1'b1) && (current_state == S_GAMEOVER_WAIT)) ? 8'b11111111 : 8'b00000000;
+	//assign ledr = ((result == 1'b0) && (current_state == S_GAMEOVER_WAIT)) ? 18'b11_11111111_11111111 : 18'b00_00000000_00000000;
 
 module datapath(
     input clk,
@@ -209,9 +318,22 @@ module datapath(
     input ld_dig0,
 	input do_mult,
 	input chk_seq,
+	input chk_seq2,
 
 	output [13:0] temp,
 	output temp2,
+
+	output [17:0] ledr,
+	output [7:0] ledg,
+	input hint,
+
+	output [4:0] timer_tens,
+	output [4:0] timer_ones,
+
+	output endtime,
+	output won,
+	input over,
+	input overwait,
 
 	output reg [3:0] d3,
 	output reg [3:0] d2,
@@ -222,6 +344,8 @@ module datapath(
 
     reg [13:0] answer;
 	assign temp = answer;
+
+	reg result;
     
     always@(posedge clk) begin
         if(!resetn) begin
@@ -244,16 +368,40 @@ module datapath(
 		    if(ld_dig0)
 			d0 <= bin;
 		end
-		if (chk_seq)
+		if (over)
 		begin
-			
+			result = correct;
 		end
         end
     end
 
+	assign ledg = ((result == 1'b1) && (overwait == 1'b1)) ? 8'b11111111 : 8'b00000000;
+	//assign ledr = ((result == 1'b0) && (overwait == 1'b1)) ? 18'b11_11111111_11111111 : 18'b00_00000000_00000000;
+	assign ledr[0] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[0]); //check if chk_seq is 1
+	assign ledr[1] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[1]);
+	assign ledr[2] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[2]);
+	assign ledr[3] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[3]);
+	assign ledr[4] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[4]);
+	assign ledr[5] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[5]);
+	assign ledr[6] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[6]);
+	assign ledr[7] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[7]);
+	assign ledr[8] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[8]);
+	assign ledr[9] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[9]);
+	assign ledr[10] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[10]);
+	assign ledr[11] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[11]);
+	assign ledr[12] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[12]);
+	assign ledr[13] = ((result == 1'b0) && (overwait == 1'b1)) || (hint && ~check[13]);
+	assign ledr[14] = (result == 1'b0) && (overwait == 1'b1);
+	assign ledr[15] = (result == 1'b0) && (overwait == 1'b1);
+	assign ledr[16] = (result == 1'b0) && (overwait == 1'b1);
+	assign ledr[17] = (result == 1'b0) && (overwait == 1'b1);
+
 	wire [13:0] check;
+	wire correct;
+	assign correct = check == 14'b11111_11111_1111;
 	assign check = ~(answer ^ switches[13:0]);
-	assign temp2 = ((check == 14'b11111_11111_1111) && (chk_seq));
+	assign temp2 = (correct && chk_seq);
+	assign won = (correct && chk_seq2);
 	
 
 	wire [3:0] bin;
@@ -261,33 +409,41 @@ module datapath(
 		.switches(switches[9:0]),
 		.bin(bin)
 	);
- 
-/*
-    // Output result register
-    always@(posedge clk) begin
-        if(!resetn) begin
-            data_result <= 8'b0; 
-        end
-        else 
-            if(ld_r)
-                data_result <= alu_out;
-    end*/
 
-	/*
-    // The ALU 
-    always @(*)
-    begin : ALU
-        // alu
-        case (alu_op)
-            0: begin
-                   alu_out = alu_a + alu_b; //performs addition
-               end
-            1: begin
-                   alu_out = alu_a * alu_b; //performs multiplication
-               end
-            default: alu_out = 8'b0;
-        endcase
-    end*/
+	/*wire p1_wire;
+	pulse_50000000 p1(
+		.clock(clk),
+		.reset(~chk_seq),
+		.enable(chk_seq),
+		.pulse(p1_wire),
+		.q()
+	);
+
+	wire p2_wire;
+	wire [4:0] timeleft;
+	pulse_30(
+		.clock(p1_wire),
+		.reset(~chk_seq),
+		.enable(chk_seq),
+		.pulse(),
+		.q(timeleft)
+	);*/
+
+	wire p1_wire;
+	assign endtime = p1_wire;
+	wire [30:0] q1;
+	pulse_1500mill p1(
+		.clock(clk),
+		.reset(~chk_seq && ~chk_seq2),
+		.enable(chk_seq || chk_seq2),
+		.pulse(p1_wire),
+		.sub(chk_seq2 && ~correct),
+		.q(q1)
+	);
+
+	wire [4:0] timeleft = q1 / 26'b10_11111010_11110000_10000000;
+	assign timer_tens = timeleft / 4'b1010;
+	assign timer_ones = timeleft % 4'b1010;
     
 endmodule
 
