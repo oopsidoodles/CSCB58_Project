@@ -447,6 +447,7 @@ module datapath(
             d2 <= 4'b0; 
             d1 <= 4'b0; 
             d0 <= 4'b0;
+		timeranout = 1'b0;
         end
 	if (f_check)
 	begin
@@ -461,6 +462,8 @@ module datapath(
 		else if (timer_tens <= 5'b00010)
 			t2000 = 1'b1;
 	end
+	if (endtime)
+		timeranout = 1'b1;
 	if (!resetn)
 		score <= 8'b00000000;
         else begin
@@ -480,7 +483,7 @@ module datapath(
 		if (over)
 		begin
 			result = correct;
-			if (correct)
+			if (correct && ~timeranout)
 				score <= score + 1;
 			else
 				score <= 8'b00000000;
@@ -512,7 +515,7 @@ module datapath(
 
 	wire [13:0] check;
 	wire correct;
-	assign correct = check == 14'b11111_11111_1111;
+	assign correct = (check == 14'b11111_11111_1111) && ~timeranout;
 	assign check = ~(answer ^ switches[13:0]);
 	assign temp2 = (correct && chk_seq);
 	assign won = (correct && chk_seq2);
@@ -524,6 +527,7 @@ module datapath(
 		.bin(bin)
 	);
 
+	reg timeranout;
 	wire p1_wire;
 	assign endtime = p1_wire;
 	wire [30:0] q1;
