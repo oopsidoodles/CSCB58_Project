@@ -482,6 +482,8 @@ module datapath(
 			result = correct;
 			if (correct)
 				score <= score + 1;
+			else
+				score <= 8'b00000000;
 		end
         end
     end
