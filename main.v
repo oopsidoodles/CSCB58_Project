@@ -4,27 +4,27 @@ module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX
     input CLOCK_50;
     output [17:0] LEDR;
     output [6:0] HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6, HEX7;
-	output [7:0] LEDG;
+    output [7:0] LEDG;
 
     wire resetn;
-	wire next;
-	wire go;
+    wire next;
+    wire go;
 
     wire [7:0] data_result;
     assign next = ~KEY[1];
     assign resetn = KEY[0];
-	assign go = ~KEY[3];
+    assign go = ~KEY[3];
 
-	wire [3:0] d3;
-	wire [3:0] d2;
-	wire [3:0] d1;
-	wire [3:0] d0;
+    wire [3:0] d3;
+    wire [3:0] d2;
+    wire [3:0] d1;
+    wire [3:0] d0;
 
-	wire [3:0] timer_tens;
-	wire [3:0] timer_ones;
+    wire [3:0] timer_tens;
+    wire [3:0] timer_ones;
 
-	wire [3:0] score_tens;
-	wire [3:0] score_ones;
+    wire [3:0] score_tens;
+    wire [3:0] score_ones;
 
     part2 u0(
 	.clk(CLOCK_50),
@@ -54,12 +54,14 @@ module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX
 	.d0(d0)
     );
 
-    hex_decoder H0(
+
+    // Display the 4 digits
+        hex_decoder H0(
         .hex_digit(d0), 
         .segments(HEX0)
         );
         
-    hex_decoder H1(
+        hex_decoder H1(
         .hex_digit(d1), 
         .segments(HEX1)
         );
@@ -74,6 +76,7 @@ module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX
 	.segments(HEX3)
 	);
 
+    // Display the time
 	hex_decoder H4(
 	.hex_digit(timer_ones), 
 	.segments(HEX4)
@@ -84,6 +87,7 @@ module Panorama(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX
 	.segments(HEX5)
 	);
 
+    // Display the score
 	hex_decoder H6(
 	.hex_digit(score_ones), 
 	.segments(HEX6)
@@ -123,11 +127,11 @@ module part2(
 	output [3:0] d0
     );
 
-    // lots of wires to connect our datapath and control
-    wire ld_dig3;
-    wire ld_dig2;
-    wire ld_dig1;
-    wire ld_dig0;
+	// wires to connect datapath and control
+	wire ld_dig3;
+	wire ld_dig2;
+	wire ld_dig1;
+	wire ld_dig0;
 	wire do_mult;
 	wire chk_seq;
 	wire chk_seq2;
@@ -216,8 +220,8 @@ module part2(
  endmodule
 
 module control(
-    input clk,
-    input resetn,
+	input clk,
+	input resetn,
 	input next,
 	input go,
 	input check,
@@ -230,10 +234,10 @@ module control(
 	output reg f_flash,
 	output reg f_check,
 
-    output reg  ld_dig3,
-    output reg  ld_dig2,
-    output reg  ld_dig1,
-    output reg  ld_dig0,
+	output reg  ld_dig3,
+	output reg  ld_dig2,
+	output reg  ld_dig1,
+	output reg  ld_dig0,
 	output reg do_mult,
 	output reg chk_seq,
 	output reg chk_seq2,
@@ -271,6 +275,7 @@ module control(
     // Next state logic aka our state table
     always@(*)
     begin: state_table 
+	    // Game state table 1 - Made in order to control the flow of the game
             case (current_state)
 		S_WAIT_DEC: next_state = next ? S_LOAD_DIGIT3 : (go ? S_WAIT_BIN_WAIT : S_WAIT_DEC);
                 S_LOAD_DIGIT3: next_state = S_LOAD_DIGIT2;
@@ -291,6 +296,7 @@ module control(
             default:     next_state = S_WAIT_DEC;
         endcase
 
+	// Game state table 2 - Runs simultaneously with the first; has the different flashing states
 	case (current_state_flash)
 		F_OFF: next_state_flash = f_timer ? F_ON: F_OFF;
                 F_ON: next_state_flash = f_duration ? F_CHECK : F_ON;
@@ -388,13 +394,13 @@ endmodule	//assign ledg = ((result == 1'b1) && (current_state == S_GAMEOVER_WAIT
 	//assign ledr = ((result == 1'b0) && (current_state == S_GAMEOVER_WAIT)) ? 18'b11_11111111_11111111 : 18'b00_00000000_00000000;
 
 module datapath(
-    input clk,
-    input resetn,
-    input [17:0] switches,
-    input ld_dig3,
-    input ld_dig2,
-    input ld_dig1,
-    input ld_dig0,
+	input clk,
+	input resetn,
+	input [17:0] switches,
+	input ld_dig3,
+	input ld_dig2,
+	input ld_dig1,
+	input ld_dig0,
 	input do_mult,
 	input chk_seq,
 	input chk_seq2,
@@ -431,11 +437,12 @@ module datapath(
 
     );
 
-    reg [13:0] answer;
+        reg [13:0] answer;
 	assign temp = answer;
 
 	reg result;
 
+	// Derive the score
 	reg [7:0] score;
 	initial score = 8'b00000000;
 	assign score_tens = score / 4'b1010;
@@ -447,19 +454,22 @@ module datapath(
             d2 <= 4'b0; 
             d1 <= 4'b0; 
             d0 <= 4'b0;
-		timeranout = 1'b0;
+	    timeranout = 1'b0;
         end
 	if (f_check)
 	begin
 		t2000 = 1'b0;
 		t1000 = 1'b0;
 		t500 = 1'b0;
+		t250 = 1'b0;
 
 		if (timer_tens <= 5'b00000)
-			t500 = 1'b1;
+			t250 = 1'b1;
 		else if (timer_tens <= 5'b00001)
-			t1000 = 1'b1;
+			t500 = 1'b1;
 		else if (timer_tens <= 5'b00010)
+			t1000 = 1'b1;
+		else if (timer_tens <= 5'b00011)
 			t2000 = 1'b1;
 	end
 	if (endtime)
@@ -467,6 +477,7 @@ module datapath(
 	if (!resetn)
 		score <= 8'b00000000;
         else begin
+		// Derive the decimal representation
 		if (do_mult)
 			answer = (d3 * 10'b11111_01000) + (d2 * 10'b00011_00100) + (d1 * 10'b00000_01010) + (d0 * 10'b00000_00001);
 		if (bin != 4'b1111)
@@ -493,7 +504,6 @@ module datapath(
 
 	//we tried a for loop but it was far too advanced for our skill set
 	assign ledg = (result && overwait) ? 8'b11111111 : 8'b00000000;
-	//assign ledr = ((result == 1'b0) && (overwait == 1'b1)) ? 18'b11_11111111_11111111 : 18'b00_00000000_00000000;
 	assign ledr[0] = (~result && overwait) || (hint && ~check[0] && chk_seq) || (~hint && f_flash && (chk_seq || chk_seq2));
 	assign ledr[1] = (~result && overwait) || (hint && ~check[1] && chk_seq) || (~hint && f_flash && (chk_seq || chk_seq2));
 	assign ledr[2] = (~result && overwait) || (hint && ~check[2] && chk_seq) || (~hint && f_flash && (chk_seq || chk_seq2));
@@ -531,7 +541,7 @@ module datapath(
 	wire p1_wire;
 	assign endtime = p1_wire;
 	wire [30:0] q1;
-	pulse_1500mill p1(
+	pulse_2000mill p1(
 		.clock(clk),
 		.reset(~(chk_seq || chk_seq2)),
 		.enable(chk_seq || chk_seq2),
@@ -540,18 +550,22 @@ module datapath(
 		.q(q1)
 	);
 
-	wire [4:0] timeleft = q1 / 26'b10_11111010_11110000_10000000;
+	// Derive the remaining time
+	wire [5:0] timeleft = q1 / 26'b10_11111010_11110000_10000000;
 	assign timer_tens = timeleft / 4'b1010;
 	assign timer_ones = timeleft % 4'b1010;
 
 	reg t2000;
 	reg t1000;
 	reg t500;
+	reg t250;
 	wire f2000;
 	wire f1000;
 	wire f500;
-	assign f_timer = (f2000 || f1000 || f500);
+	wire f250;
+	assign f_timer = (f2000 || f1000 || f500 || f250);
 
+	// The various pulse (flash) rates
 	pulse_100mill p100mill(
 		.clock(clk),
 		.reset(~((chk_seq || chk_seq2) && t2000)),
@@ -576,6 +590,14 @@ module datapath(
 		.q()
 	);
 
+	pulse_12mill500k p12mill500k(
+		.clock(clk),
+		.reset(~((chk_seq || chk_seq2) && t250)),
+		.enable((chk_seq || chk_seq2) && t250),
+		.pulse(f250),
+		.q()
+	);
+
 	pulse_10mill p10mill(
 		.clock(clk),
 		.reset(~((chk_seq || chk_seq2) && f_flash)),
@@ -585,6 +607,7 @@ module datapath(
 	);
 endmodule
 
+// Get the binary value from the switches
 module sw_bin(
 	input [9:0] switches,
 	output reg [3:0] bin
